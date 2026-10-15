@@ -108,10 +108,10 @@ body.locked .app{visibility:hidden}
   <div class="warn" id="warn" role="alert"></div>
   <div class="grid">
     <div class="stack">
-      <figure><figcaption><span>WA<small>2000×1000 · export 3×</small></span><span class="acts"><button class="btn-line" data-copy="wa" type="button">Copy</button><button class="btn-yellow" data-dl="wa" type="button">Download PNG</button></span></figcaption><canvas id="c_wa"></canvas></figure>
-      <figure><figcaption><span>Email<small>2000×1000 · export 3×</small></span><span class="acts"><button class="btn-line" data-copy="email" type="button">Copy</button><button class="btn-yellow" data-dl="email" type="button">Download PNG</button></span></figcaption><canvas id="c_email"></canvas></figure>
+      <figure><figcaption><span>WA<small data-size="wa">PNG · maks 4 MB</small></span><span class="acts"><button class="btn-line" data-copy="wa" type="button">Copy</button><button class="btn-yellow" data-dl="wa" type="button">Download PNG</button></span></figcaption><canvas id="c_wa"></canvas></figure>
+      <figure><figcaption><span>Email<small data-size="email">PNG · maks 4 MB</small></span><span class="acts"><button class="btn-line" data-copy="email" type="button">Copy</button><button class="btn-yellow" data-dl="email" type="button">Download PNG</button></span></figcaption><canvas id="c_email"></canvas></figure>
     </div>
-    <figure class="portrait"><figcaption><span>In App<small>595×842 · export 3×</small></span><span class="acts"><button class="btn-line" data-copy="inapp" type="button">Copy</button><button class="btn-yellow" data-dl="inapp" type="button">Download PNG</button></span></figcaption><canvas id="c_inapp"></canvas></figure>
+    <figure class="portrait"><figcaption><span>In App<small data-size="inapp">PNG · maks 4 MB</small></span><span class="acts"><button class="btn-line" data-copy="inapp" type="button">Copy</button><button class="btn-yellow" data-dl="inapp" type="button">Download PNG</button></span></figcaption><canvas id="c_inapp"></canvas></figure>
   </div>
 </main>
 </div>
@@ -257,9 +257,28 @@ function renderAll(){
 
 /* ---------- export ---------- */
 function slug(s){ return s.replace(/[^a-z0-9]+/gi,"").replace(/^./,c=>c.toUpperCase()) || "Club"; }
-function fullBlob(key){
-  const c=document.createElement("canvas"); render(c,key,getData(),1);
-  return new Promise(res=>c.toBlob(res,"image/png"));
+const MAX_BYTES = 4*1000*1000;            /* batas 4 MB per file */
+const START_SCALE = { wa:0.5, email:0.5, inapp:1 };
+const lastExport = {};
+function blobAt(key, d, scale){
+  const c=document.createElement("canvas"); render(c,key,d,scale);
+  return new Promise(res=>c.toBlob(b=>res({blob:b,w:c.width,h:c.height}),"image/png"));
+}
+/* PNG yang dijamin <= 4 MB: resolusi diturunin sampai muat */
+async function fullBlob(key){
+  const d=getData(); let s=START_SCALE[key], best=null;
+  for (let i=0;i<6;i++){
+    const r=await blobAt(key,d,s);
+    if (r.blob.size<=MAX_BYTES){ best=r; break; }
+    s = s*Math.sqrt(MAX_BYTES*0.92/r.blob.size);
+  }
+  if (!best) best=await blobAt(key,d,s*0.8);
+  lastExport[key]=best; showSize(key,best);
+  return best.blob;
+}
+function showSize(key,r){
+  const el=document.querySelector(`[data-size="${key}"]`);
+  if (el) el.textContent=`${r.w}×${r.h} · ${(r.blob.size/1e6).toFixed(1)} MB`;
 }
 function fname(key){ const d=getData(); return `RTC_${slug(d.club.replace(/\s+(\w)/g,(m,a)=>a.toUpperCase()))}_${FORMATS[key].file}.png`; }
 function save(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
